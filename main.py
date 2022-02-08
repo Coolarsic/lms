@@ -2,78 +2,89 @@ import requests
 
 API_KEY = '40d1649f-0493-4b70-98ba-98533de7710b'
 
+import sys
 
-def geocode(address):
-    # Собираем запрос для геокодера.
-    geocoder_request = f"http://geocode-maps.yandex.ru/1.x/"
-    geocoder_params = {
-        "apikey": API_KEY,
-        "geocode": address,
-        "format": "json"}
-
-    # Выполняем запрос.
-    response = requests.get(geocoder_request, params=geocoder_params)
-
-    if response:
-        # Преобразуем ответ в json-объект
-        json_response = response.json()
-    else:
-        raise RuntimeError(
-            f"""Ошибка выполнения запроса:
-            {geocoder_request}
-            Http статус: {response.status_code} ({response.reason})""")
-
-    # Получаем первый топоним из ответа геокодера.
-    # Согласно описанию ответа он находится по следующему пути:
-    features = json_response["response"]["GeoObjectCollection"]["featureMember"]
-    return features[0]["GeoObject"] if features else None
+from buiseness import find_business, find_businesses
+from distance import lonlat_distance
+from mepapi_PG import show_map
+from geocoder import get_coordinates
 
 
-# Получаем координаты объекта по его адресу.
-def get_coordinates(address):
-    toponym = geocode(address)
-    if not toponym:
-        return None, None
-
-    # Координаты центра топонима:
-    toponym_coodrinates = toponym["Point"]["pos"]
-    # Широта, преобразованная в плавающее число:
-    toponym_longitude, toponym_lattitude = toponym_coodrinates.split(" ")
-    return float(toponym_longitude), float(toponym_lattitude)
 
 
-# Получаем параметры объекта для рисования карты вокруг него.
+
+
+def main():
+    toponym_to_find = " ".join(sys.argv[1:])
+
+    lat, lon = get_coordinates(toponym_to_find)
+    address_ll = f"{lat},{lon}"
+    span = "0.005,0.005"
+
+    # Получаем координаты ближайшей аптеки.
+    organization = find_business(address_ll, span, "аптека")
+    point = organization["geometry"]["coordinates"]
+    org_lat = float(point[0])
+    org_lon = float(point[1])
+    point_param = f"pt={org_lat},{org_lon},pm2dgl"
+
+    show_map(f"ll={address_ll}&spn={span}", "map", add_params=point_param)
+
+    # Добавляем на карту точку с исходным адресом.
+    points_param = point_param + f"~{address_ll},pm2rdl"
+
+    show_map("ll={0}&spn={1}".format(address_ll, span), "map", add_params=points_param)
+
+    # Автопозиционирование
+    show_map(map_type="map", add_params=points_param)
+
+    # Сниппет
+    # Название организации.
+    name = organization["properties"]["CompanyMetaData"]["name"]
+    # Адрес организации.
+    address = organization["properties"]["CompanyMetaData"]["address"]
+    # Время работы
+    time = organization["properties"]["CompanyMetaData"]["Hours"]["text"]
+    # Расстояние
+    distance = round(lonlat_distance((lon, lat), (org_lon, org_lat)))
+
+    snippet = f"Название:\t{name}\nАдрес:\t{address}\nВремя работы:\t{time}\n" \
+              f"Расстояние:\t{distance}м."
+    print(snippet)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
 def get_ll_span(address):
     toponym = geocode(address)
     if not toponym:
         return (None, None)
 
-    # Координаты центра топонима:
     toponym_coodrinates = toponym["Point"]["pos"]
-    # Долгота и Широта :
+
     toponym_longitude, toponym_lattitude = toponym_coodrinates.split(" ")
 
-    # Собираем координаты в параметр ll
     ll = ",".join([toponym_longitude, toponym_lattitude])
 
-    # Рамка вокруг объекта:
     envelope = toponym["boundedBy"]["Envelope"]
 
-    # левая, нижняя, правая и верхняя границы из координат углов:
     l, b = envelope["lowerCorner"].split(" ")
     r, t = envelope["upperCorner"].split(" ")
 
-    # Вычисляем полуразмеры по вертикали и горизонтали
     dx = abs(float(l) - float(r)) / 2.0
     dy = abs(float(t) - float(b)) / 2.0
 
-    # Собираем размеры в параметр span
     span = f"{dx},{dy}"
 
     return ll, span
 
 
-# Находим ближайшие к заданной точке объекты заданного типа.
 def get_nearest_object(point, kind):
     ll = "{0},{1}".format(point[0], point[1])
     geocoder_request = f"http://geocode-maps.yandex.ru/1.x/"
@@ -83,7 +94,7 @@ def get_nearest_object(point, kind):
         "format": "json"}
     if kind:
         geocoder_params['kind'] = kind
-    # Выполняем запрос к геокодеру, анализируем ответ.
+
     response = requests.get(geocoder_request, params=geocoder_params)
     if not response:
         raise RuntimeError(
@@ -91,9 +102,12 @@ def get_nearest_object(point, kind):
             {geocoder_request}
             Http статус: {response.status_code,} ({response.reason})""")
 
-    # Преобразуем ответ в json-объект
     json_response = response.json()
-
-    # Получаем первый топоним из ответа геокодера.
     features = json_response["response"]["GeoObjectCollection"]["featureMember"]
     return features[0]["GeoObject"]["name"] if features else None
+
+if __name__ == "__main__":
+    lon = input("Введите долготу: ")
+    lat = input("Введите широту: ")
+    typ = "apteka"
+    print(get_nearest_object((lon, lat), typ))

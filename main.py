@@ -3,15 +3,10 @@ import requests
 API_KEY = '40d1649f-0493-4b70-98ba-98533de7710b'
 
 import sys
-
 from buiseness import find_business, find_businesses
 from distance import lonlat_distance
 from mepapi_PG import show_map
-from geocoder import get_coordinates
-
-
-
-
+from geocoder import get_coordinates, geocode
 
 
 def main():
@@ -51,14 +46,6 @@ def main():
     snippet = f"Название:\t{name}\nАдрес:\t{address}\nВремя работы:\t{time}\n" \
               f"Расстояние:\t{distance}м."
     print(snippet)
-
-
-if __name__ == "__main__":
-    main()
-
-
-
-
 
 
 def get_ll_span(address):
@@ -106,8 +93,6 @@ def get_nearest_object(point, kind):
     features = json_response["response"]["GeoObjectCollection"]["featureMember"]
     return features[0]["GeoObject"]["name"] if features else None
 
+
 if __name__ == "__main__":
-    lon = input("Введите долготу: ")
-    lat = input("Введите широту: ")
-    typ = "apteka"
-    print(get_nearest_object((lon, lat), typ))
+    main()
